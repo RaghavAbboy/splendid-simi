@@ -1,1 +1,1 @@
-angular.module('park', ['park.services']);
+angular.module('park', ['park.services', 'firebase']);
