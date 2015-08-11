@@ -23,6 +23,14 @@ app.post('/api/getspots', function(req,res) {
 	console.log('server.js says: POST request received! body:', req.body);
 	var userLocation = req.body.location;
 
+	//dummy coordinates
+	var dummyCoordinates = [{
+		latitude : 34.0219, 
+		longitude : -118.4814
+	}];
+	res.send(200, dummyCoordinates);
+
+/*
 	//Make a GET request to the storage in database
 	firedb.child("Metered Parking Spots").on("value", function (snapshot) {
 		//console.log("Fetched all spots:",snapshot.val());
@@ -81,49 +89,51 @@ done = true;
 }); //meter:available request ends here
 }
 
-filterAvailableOnes(closeSpots[i],res);
-
-//----------------------------------------------------------------------------------------------
-var checkParkingSpot = function(obj,res) {
-//request to check for meter:'active'
-request(active_url+obj.meter_id, function (error, response, body) {
-if(error) { console.log('Error while checking whether meter:active'); }
-if (!error && response.statusCode === 200) {
-body = JSON.parse(body);
-console.log('Data from SMGov API (meter:active):', body);
-
-if(body.active) {
-//if active, check for meter:'available'
-request(busy_url_1 + body.meter_id + busy_url_2, function (error, response, body) {
-if(error) { console.log('Error while checking for meter:available'); }
-if(!error && response.statusCode === 200) {
-body = JSON.parse(body);
-//console.log('Data from SMGov API (meter:available):', body);
-//body.event_type = SS(move in) / SE(move out)
-if(body.event_type === 'SE') {
-//add the spot to freespots
-freeSpots.push(obj);
-// res.send(200, freeSpots);
-}
-}
-}); //meter:available request ends here
-}
-}
-numChecks++;
-if(numChecks === totalCloseSpots) {
-res.send(200, freeSpots);
-}
-
-}); //meter:active request ends here
-}//checkParkingSpot function ends here
-
-//checkParkingSpot(closeSpots[i],res);
-//----------------------------------------------------------------------------------------------
+//uncomment
+//filterAvailableOnes(closeSpots[i],res);
 
 } //end of for loop
 
-	}); //firebase query ends here
+//----------------------------------------------------------------------------------------------
+// var checkParkingSpot = function(obj,res) {
+// //request to check for meter:'active'
+// request(active_url+obj.meter_id, function (error, response, body) {
+// if(error) { console.log('Error while checking whether meter:active'); }
+// if (!error && response.statusCode === 200) {
+// body = JSON.parse(body);
+// console.log('Data from SMGov API (meter:active):', body);
+
+// if(body.active) {
+// //if active, check for meter:'available'
+// request(busy_url_1 + body.meter_id + busy_url_2, function (error, response, body) {
+// if(error) { console.log('Error while checking for meter:available'); }
+// if(!error && response.statusCode === 200) {
+// body = JSON.parse(body);
+// //console.log('Data from SMGov API (meter:available):', body);
+// //body.event_type = SS(move in) / SE(move out)
+// if(body.event_type === 'SE') {
+// //add the spot to freespots
+// freeSpots.push(obj);
+// // res.send(200, freeSpots);
+// }
+// }
+// }); //meter:available request ends here
+// }
+// }
+// numChecks++;
+// if(numChecks === totalCloseSpots) {
+// res.send(200, freeSpots);
+// }
+
+// }); //meter:active request ends here
+// }//checkParkingSpot function ends here
+
+//checkParkingSpot(closeSpots[i],res);
+//----------------------------------------------------------------------------------------------
 	
+
+	}); //firebase query ends here
+*/
 });	//api/getspots ends here
 
 
@@ -136,6 +146,9 @@ var isWithinRange = function(latU, longU, latP, longP, radius) {
 	return euDistance < threshold;
 }
 
+var distance = function (latU, longU, latP, longP) {
+	return Math.sqrt(Math.pow((latP - latU)*69.1128,2) + Math.pow((longP - longU)*57.2807,2));
+}
 
 //----------------------------------
 //Initialize Firebase with information on all the metered spots in santa monica
@@ -164,6 +177,91 @@ app.post('/api/init', function(req,res) {
   	});	
 }); // /api/init ends here
 
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------
+//Listen for a user session - Entry on firebase
+var firecloud = new Firebase('https://burning-fire-1110.firebaseio.com/');
+var usersRef = firecloud.child('Users');
+usersRef.on('child_added', function (childSnapshot, prevChildKey) {
+	console.log('******************* NEW USER ********************')
+	var user = childSnapshot.val();
+	var userKey = childSnapshot.key();
+	console.log('User\'s details:',user, typeof user, 'currChildKey:', childSnapshot.key());
+	console.log('*************************************************');
+
+	//Use the user's coordinates to get a list of feasible spots
+	var radius = user.range;
+	var tuple = [user.latitude, user.longitude];
+
+	//getspots
+	firecloud.child('MeteredParkingSpots').once('value', function (snapshot) {
+		var pSpots = snapshot.val();
+		var closeSpots = [];
+		var freeSpots = {};
+
+		for(var key in pSpots) {
+			//console.log('A parkSpot:',pSpots[key]);
+			var displacement = distance(tuple[0], tuple[1], pSpots[key].latitude, pSpots[key].longitude);
+			if(displacement < radius) {
+				//closeSpots.push(pSpots[key]);
+				console.log('Close spot found: ',pSpots[key]);
+
+				pSpots[key].distance = displacement;
+				if(pSpots[key].mostRecentEvent === 'SE') {
+					freeSpots[key] = pSpots[key];
+				}
+
+				//check whether free, and push to recommendations
+				// firecloud.child('MeteredParkingSpots').child(key).once('value', function (closeSpotRef) {
+				// 	var closeSpot = closeSpotRef.val();
+				// 	if(closeSpot.mostRecentEvent === 'SE') {
+				// 		//console.log('A Free Spot:', closeSpot);
+				// 		closeSpot.distance = distance(tuple[0], tuple[1], closeSpot.latitude, closeSpot.longitude);
+				// 		freeSpots.push(closeSpot);						
+				// 		firecloud.child('Users').child(userKey).child('Recommendations').push(closeSpot);
+				// 	}
+				// });
+
+			} // end if condition to check within range
+		} // end of for loop for pSpots
+		firecloud.child('Users').child(userKey).child('Recommendations').set(freeSpots);
+
+
+		// console.log('Number of freeSpots:', freeSpots.length);
+		// console.log('Number of closeSpots:', closeSpots.length);
+	});
+});
+
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------
 
 module.exports = app;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

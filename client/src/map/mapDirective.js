@@ -7,28 +7,72 @@ map.directive('map', ['Comm', 'User', 'UserMarker', 'MeterMarkers', 'DirectionsD
   var findSpot = function(tuple) {
     loadingText.text('Finding you the best parking spot...');
     
+    //remove
     console.log(tuple);
 
-    Comm.getspots(tuple,range)
-    .then(function(spot) {
-      console.log('mapDirective.js says: spot:', spot);
-      
-      // meter location
-      var meterLoc = new google.maps.LatLng(spot[0],spot[1]);
+    //Create a user and get the key
+    var ref = Comm.createUser(tuple, range);
+    console.log('User created. Key:', ref.key());
 
-      MeterMarkers.addMarker(map,true,meterLoc);
-      User.setDestination(meterLoc);
 
-      User.watchPosition(map)
-      .then(function(userLocation) {
-        map.panTo(userLocation);
-        loadingText.text('Spot Found! Calculating Route...');
-        return User.calcRoute();
-      })
-      .then(function(directions) {
-        loading.removeClass('show');
-      });
+    //variables to help navigate to the best one
+    var first = false;
+    var queue = [];
+
+    //Setup a listener for recommendations, ordered by distance
+    ref.child('Recommendations').orderByChild('distance').on('child_added', function(snapshot){
+      var pSpot = snapshot.val();
+      console.log(typeof pSpot); 
+
+      if(!first) {
+        first = true;
+        var spot = [pSpot.latitude, pSpot.longitude];
+        console.log('mapDirective.js says: spot:', spot);
+        
+        // meter location
+        var meterLoc = new google.maps.LatLng(spot[0],spot[1]);
+
+        MeterMarkers.addMarker(map,true,meterLoc);
+        User.setDestination(meterLoc);
+
+        User.watchPosition(map)
+        .then(function(userLocation) {
+          map.panTo(userLocation);
+          loadingText.text('Spot Found! Calculating Route...');
+          return User.calcRoute();
+        })
+        .then(function(directions) {
+          loading.removeClass('show');
+        });
+      }
+      else {
+        queue.push(pSpot);
+      }
+
     });
+
+
+    // Comm.getspots(tuple,range)
+    // .then(function(spot) {
+    //   console.log('mapDirective.js says: spot:', spot);
+      
+    //   // meter location
+    //   var meterLoc = new google.maps.LatLng(spot[0],spot[1]);
+
+    //   MeterMarkers.addMarker(map,true,meterLoc);
+    //   User.setDestination(meterLoc);
+
+    //   User.watchPosition(map)
+    //   .then(function(userLocation) {
+    //     map.panTo(userLocation);
+    //     loadingText.text('Spot Found! Calculating Route...');
+    //     return User.calcRoute();
+    //   })
+    //   .then(function(directions) {
+    //     loading.removeClass('show');
+    //   });
+    // });
+    
   };
 
   var initialize = function() {
